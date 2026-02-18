@@ -18,8 +18,9 @@ const (
 )
 
 type payload struct {
-	Event string `json:"event"`
-	Email string `json:"email"`
+	Event    string `json:"event"`
+	Email    string `json:"email"`
+	OldEmail string `json:"old_email,omitempty"`
 }
 
 // Send posts a webhook payload to the configured Ente webhook URL.
@@ -32,6 +33,50 @@ func Send(event string, email string) {
 	body, err := json.Marshal(payload{
 		Event: event,
 		Email: email,
+	})
+	if err != nil {
+		log.WithError(err).Warn("Send webhook: failed to marshal payload")
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		log.WithError(err).Warn("Send webhook: failed to create request")
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	token := viper.GetString(cfgToken)
+	if token != "" {
+		req.Header.Set(headerToken, token)
+	}
+
+	client := &http.Client{Timeout: defaultTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.WithError(err).WithField("url", url).Warn("Send webhook: request failed")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		log.WithFields(log.Fields{
+			"url":    url,
+			"status": resp.StatusCode,
+		}).Warn("Send webhook: non-2xx response")
+	}
+}
+
+func SendEmailUpdated(oldEmail string, newEmail string) {
+	url := viper.GetString(cfgURL)
+	if url == "" {
+		return
+	}
+
+	body, err := json.Marshal(payload{
+		Event:    "user.email_updated",
+		Email:    newEmail,
+		OldEmail: oldEmail,
 	})
 	if err != nil {
 		log.WithError(err).Warn("Send webhook: failed to marshal payload")

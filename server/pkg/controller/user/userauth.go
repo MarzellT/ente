@@ -323,6 +323,10 @@ func (c *UserController) UpdateEmail(ctx *gin.Context, userID int64, email strin
 	if err != nil {
 		return stacktrace.Propagate(err, "")
 	}
+
+	// Best-effort webhook; email update itself should not fail if webhook delivery fails.
+	go webhook.SendEmailUpdated(oldEmail, email)
+
 	_ = emailUtil.SendTemplatedEmail([]string{user.Email}, "ente", "team@ente.io",
 		ente.EmailChangedSubject, ente.EmailChangedTemplate, map[string]interface{}{
 			"NewEmail": email,
