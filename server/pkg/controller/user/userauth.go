@@ -143,6 +143,17 @@ func (c *UserController) isEmailAlreadyUsed(email string) error {
 	return nil
 }
 
+func (c *UserController) isInvitedForSignup(email string) bool {
+	allowed := viper.GetStringSlice("internal.invite-only-emails")
+	candidate := strings.ToLower(strings.TrimSpace(email))
+	for _, invite := range allowed {
+		if candidate == strings.ToLower(strings.TrimSpace(invite)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *UserController) validateSendOTT(ctx *gin.Context, email string, purpose string) error {
 	if purpose == ente.ChangeEmailOTTPurpose {
 		if err := c.isEmailAlreadyUsed(email); err != nil {
@@ -154,7 +165,9 @@ func (c *UserController) validateSendOTT(ctx *gin.Context, email string, purpose
 		return stacktrace.Propagate(err, "")
 	}
 	if purpose == ente.SignUpOTTPurpose && viper.GetBool("internal.disable-registration") && !isSignUpComplete {
-		return stacktrace.Propagate(ente.ErrPermissionDenied, "registration is disabled")
+		if !c.isInvitedForSignup(email) {
+			return stacktrace.Propagate(ente.ErrPermissionDenied, "registration is disabled")
+		}
 	}
 	//
 	var registrationErr error
@@ -428,7 +441,7 @@ func emailOTT(app ente.App, to string, ott string, purpose string, mobile bool) 
 }
 
 // onVerificationSuccess is called when the user has successfully verified their email address.
-// source indicates where the user came from.  It can be nil.
+// source indicates where the user came from. It can be nil.
 func (c *UserController) onVerificationSuccess(context *gin.Context, email string, source *string) (ente.EmailAuthorizationResponse, error) {
 	isTwoFactorEnabled := false
 	app := auth.GetApp(context)
@@ -437,12 +450,13 @@ func (c *UserController) onVerificationSuccess(context *gin.Context, email strin
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			if viper.GetBool("internal.disable-registration") {
-				return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(ente.ErrPermissionDenied, "")
-			} else {
-				userID, _, err = c.createUser(email, source)
-				if err != nil {
-					return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(err, "")
+				if !c.isInvitedForSignup(email) {
+					return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(ente.ErrPermissionDenied, "")
 				}
+			}
+			userID, _, err = c.createUser(email, source)
+			if err != nil {
+				return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(err, "")
 			}
 		} else {
 			return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(err, "")
