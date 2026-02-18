@@ -22,6 +22,7 @@ import (
 	"github.com/ente-io/museum/pkg/utils/crypto"
 	emailUtil "github.com/ente-io/museum/pkg/utils/email"
 	"github.com/ente-io/museum/pkg/utils/time"
+	"github.com/ente-io/museum/pkg/utils/webhook"
 	"github.com/ente-io/stacktrace"
 
 	"github.com/gin-gonic/gin"
@@ -458,6 +459,8 @@ func (c *UserController) onVerificationSuccess(context *gin.Context, email strin
 			if err != nil {
 				return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(err, "")
 			}
+			// Best-effort, do not block auth flow on webhook failures.
+			webhook.Send("user.created", email)
 		} else {
 			return ente.EmailAuthorizationResponse{}, stacktrace.Propagate(err, "")
 		}
