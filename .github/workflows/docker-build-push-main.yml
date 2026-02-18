@@ -1,0 +1,57 @@
+name: Build and Push Docker Images (main)
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: museum
+            context: server
+            dockerfile: server/Dockerfile
+            image: ente-museum
+          - name: web
+            context: .
+            dockerfile: web/Dockerfile
+            image: ente-web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compute lowercase image owner
+        id: vars
+        run: echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image }}:latest
+            ghcr.io/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image }}:${{ github.sha }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
